@@ -6,6 +6,7 @@
  *
  * This code is licensed under the GPL.
  */
+#include <stdio.h>
 
 #include "hw/sysbus.h"
 #include "hw/arm/arm.h"
@@ -23,151 +24,20 @@
 //setup LPC2138 flash
 #define VIVOTECH_FLASH_ADDR 0x00000000
 #define VIVOTECH_FLASH_SIZE (512 * 1024)
-#define VIVOTECH_FLASH_SECT_SIZE (4 * 1024)
+#define VIVOTECH_FLASH_SECT_SIZE 512  
+#define VIVOTECH_RAM_ADDR 0x40000000
+#define VIVOTECH_RAM_SIZE (64 * 1024)
 
-#define VIVOTECH_RAM_ADDR 0x400000000
-
-/* Primary interrupt controller.  */
-
-#define TYPE_VIVOTECH_PB_SIC "vivotechpb_sic"
-#define VIVOTECH_PB_SIC(obj) \
-    OBJECT_CHECK(vpb_sic_state, (obj), TYPE_VIVOTECH_PB_SIC)
-
-typedef struct vpb_sic_state {
-    SysBusDevice parent_obj;
-
-    MemoryRegion iomem;
-    uint32_t level;
-    uint32_t mask;
-    uint32_t pic_enable;
-    qemu_irq parent[32];
-    int irq;
-} vpb_sic_state;
-
-static const VMStateDescription vmstate_vpb_sic = {
-    .name = "vivotechpb_sic",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT32(level, vpb_sic_state),
-        VMSTATE_UINT32(mask, vpb_sic_state),
-        VMSTATE_UINT32(pic_enable, vpb_sic_state),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-static void vpb_sic_update(vpb_sic_state *s)
-{
-    uint32_t flags;
-
-    flags = s->level & s->mask;
-    qemu_set_irq(s->parent[s->irq], flags != 0);
-}
-
-static void vpb_sic_update_pic(vpb_sic_state *s)
-{
-    int i;
-    uint32_t mask;
-
-    for (i = 21; i <= 30; i++) {
-        mask = 1u << i;
-        if (!(s->pic_enable & mask))
-            continue;
-        qemu_set_irq(s->parent[i], (s->level & mask) != 0);
-    }
-}
-
-static void vpb_sic_set_irq(void *opaque, int irq, int level)
-{
-    vpb_sic_state *s = (vpb_sic_state *)opaque;
-    if (level)
-        s->level |= 1u << irq;
-    else
-        s->level &= ~(1u << irq);
-    if (s->pic_enable & (1u << irq))
-        qemu_set_irq(s->parent[irq], level);
-    vpb_sic_update(s);
-}
-
-static uint64_t vpb_sic_read(void *opaque, hwaddr offset,
-                             unsigned size)
-{
-    vpb_sic_state *s = (vpb_sic_state *)opaque;
-
-    switch (offset >> 2) {
-    case 0: /* STATUS */
-        return s->level & s->mask;
-    case 1: /* RAWSTAT */
-        return s->level;
-    case 2: /* ENABLE */
-        return s->mask;
-    case 4: /* SOFTINT */
-        return s->level & 1;
-    case 8: /* PICENABLE */
-        return s->pic_enable;
-    default:
-        printf ("vpb_sic_read: Bad register offset 0x%x\n", (int)offset);
-        return 0;
-    }
-}
-
-static void vpb_sic_write(void *opaque, hwaddr offset,
-                          uint64_t value, unsigned size)
-{
-    vpb_sic_state *s = (vpb_sic_state *)opaque;
-
-    switch (offset >> 2) {
-    case 2: /* ENSET */
-        s->mask |= value;
-        break;
-    case 3: /* ENCLR */
-        s->mask &= ~value;
-        break;
-    case 4: /* SOFTINTSET */
-        if (value)
-            s->mask |= 1;
-        break;
-    case 5: /* SOFTINTCLR */
-        if (value)
-            s->mask &= ~1u;
-        break;
-    case 8: /* PICENSET */
-        s->pic_enable |= (value & 0x7fe00000);
-        vpb_sic_update_pic(s);
-        break;
-    case 9: /* PICENCLR */
-        s->pic_enable &= ~value;
-        vpb_sic_update_pic(s);
-        break;
-    default:
-        printf ("vpb_sic_write: Bad register offset 0x%x\n", (int)offset);
-        return;
-    }
-    vpb_sic_update(s);
-}
-
-static const MemoryRegionOps vpb_sic_ops = {
-    .read = vpb_sic_read,
-    .write = vpb_sic_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-};
-
-static int vpb_sic_init(SysBusDevice *sbd)
-{
-    DeviceState *dev = DEVICE(sbd);
-    vpb_sic_state *s = VIVOTECH_PB_SIC(dev);
-    int i;
-
-    qdev_init_gpio_in(dev, vpb_sic_set_irq, 32);
-    for (i = 0; i < 32; i++) {
-        sysbus_init_irq(sbd, &s->parent[i]);
-    }
-    s->irq = 31;
-    memory_region_init_io(&s->iomem, OBJECT(s), &vpb_sic_ops, s,
-                          "vpb-sic", 0x1000);
-    sysbus_init_mmio(sbd, &s->iomem);
-    return 0;
-}
+char iapcode[41] = {
+0x01,0x68,0x36,0x29,
+0xc0,0x46,0xc0,0x46,
+0xc0,0x46,0xc0,0x46,
+0xc0,0x46,0xc0,0x46,
+0x03,0xd1,0x03,0x4a,
+0x62,0x60,0x70,0x47,
+0xc0,0x46,0x70,0x47,
+0xc0,0x46,0xc0,0x46,
+0x25,0xff,0x02,0x00};
 
 /* Board init.  */
 
@@ -179,17 +49,20 @@ static struct arm_boot_info vivotech_binfo;
 
 static void vivotech_init(MachineState *machine, int board_id)
 {
+    FILE *ramfile;
+    char ramdata[VIVOTECH_RAM_SIZE];
+ 
     ObjectClass *cpu_oc;
     Object *cpuobj;
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
     MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *iap = g_new(MemoryRegion, 1);
+ 
     qemu_irq pic[32]; //primary interrupt controller
-    qemu_irq sic[32]; //secondary interrupt controller
-    DeviceState *dev, *sysctl, *pllctl;
+    DeviceState *dev, *sysctl, *pllctl, *gpio0, *gpio1;//, *iap;
     SysBusDevice *busdev;
     DeviceState *pl041;
-    PCIBus *pci_bus;
     NICInfo *nd;
     I2CBus *i2c;
     int n;
@@ -206,7 +79,7 @@ static void vivotech_init(MachineState *machine, int board_id)
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
-
+     
     cpuobj = object_new(object_class_get_name(cpu_oc));
 
     /* By default ARM1176 CPUs have EL3 enabled.  This board does not
@@ -230,87 +103,64 @@ static void vivotech_init(MachineState *machine, int board_id)
     cpu = ARM_CPU(cpuobj);
 
     memory_region_init_ram(ram, NULL, "vivotech.ram", machine->ram_size,
-                           &error_abort);
+                          &error_abort);
     vmstate_register_ram_global(ram);
-    /* ??? RAM should repeat to fill physical memory space.  */
+        /* ??? RAM should repeat to fill physical memory space.  */
     /* SDRAM at address zero.  */
     memory_region_add_subregion(sysmem, VIVOTECH_RAM_ADDR, ram);
+    
+    sysctl = qdev_create(NULL, "lpc213x_sysctl");
+    qdev_prop_set_uint32(sysctl, "pllstat", 0x400); 
+    qdev_init_nofail(sysctl);
+    sysbus_mmio_map(SYS_BUS_DEVICE(sysctl), 0, 0xE01FC000);
 
-    //sysctl = qdev_create(NULL, "sys_ctl");
-    //qdev_prop_set_uint32(sysctl, "sys_id", 0x41007004);
-    //qdev_prop_set_uint32(sysctl, "proc_id", 0x02000000);
-    //qdev_init_nofail(sysctl);
-    //sysbus_mmio_map(SYS_BUS_DEVICE(sysctl), 0, 0x10000000);
-
-    //setup PLL block
-    pllctl = qdev_create(NULL, "pll");
-    qdev_prop_set_uint32(pllctl, "pll_con", 0x00000000);
-    qdev_prop_set_uint32(pllctl, "pll_cfg", 0x00000000);
-    qdev_prop_set_uint32(pllctl, "pll_stat", 0x00000400); //set to pass val
-    qdev_prop_set_uint32(pllctl, "pll_feed", 0x00000000);
-    qdev_init_nofail(pllctl);
-    sysbus_mmio_map(SYS_BUS_DEVICE(pllctl), 0, 0xE01FC080);
-
-    dev = sysbus_create_varargs("pl190", 0x10140000,
-                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ),
-                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ),
+    //vectored interrupt controller
+    dev = sysbus_create_varargs("pl190", 0xFFFFF000,
+                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ), //interrupt request
+                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ), //fast interrupt request
                                 NULL);
-    for (n = 0; n < 32; n++) {
+    for(n = 0; n < 32; n++) { 
         pic[n] = qdev_get_gpio_in(dev, n);
     }
-    dev = sysbus_create_simple(TYPE_VIVOTECH_PB_SIC, 0x10003000, NULL);
-    for (n = 0; n < 32; n++) {
-        sysbus_connect_irq(SYS_BUS_DEVICE(dev), n, pic[n]);
-        sic[n] = qdev_get_gpio_in(dev, n);
-    }
-
-    //sysbus_create_simple("pl050_keyboard", 0x10006000, sic[3]);
-    //sysbus_create_simple("pl050_mouse", 0x10007000, sic[4]);
+    //configure gpios
+    gpio0 = qdev_create(NULL, "lpc213x_gpio");
+    qdev_prop_set_uint32(gpio0, "iopin", 0x800); 
+    qdev_init_nofail(gpio0);
+    sysbus_mmio_map(SYS_BUS_DEVICE(gpio0), 0, 0xE0028000);
     
-    //dev = qdev_create(NULL, "vivotech_pci");
-    //busdev = SYS_BUS_DEVICE(dev);
-    //qdev_init_nofail(dev);
-    //sysbus_mmio_map(busdev, 0, 0x10001000); /* PCI controller regs */
-    //sysbus_mmio_map(busdev, 1, 0x41000000); /* PCI self-config */
-    //sysbus_mmio_map(busdev, 2, 0x42000000); /* PCI config */
-    //sysbus_mmio_map(busdev, 3, 0x43000000); /* PCI I/O */
-    //sysbus_mmio_map(busdev, 4, 0x44000000); /* PCI memory window 1 */
-    //sysbus_mmio_map(busdev, 5, 0x50000000); /* PCI memory window 2 */
-    //sysbus_mmio_map(busdev, 6, 0x60000000); /* PCI memory window 3 */
-    //sysbus_connect_irq(busdev, 0, sic[27]);
-    //sysbus_connect_irq(busdev, 1, sic[28]);
-    //sysbus_connect_irq(busdev, 2, sic[29]);
-    //sysbus_connect_irq(busdev, 3, sic[30]);
-    //pci_bus = (PCIBus *)qdev_get_child_bus(dev, "pci");
-    /* 
-    for(n = 0; n < nb_nics; n++) {
-        nd = &nd_table[n];
+    gpio1 = qdev_create(NULL, "lpc213x_gpio");
+    //qdev_prop_set_uint32(gpio1, "ioset", 0x800); 
+    qdev_init_nofail(gpio1);
+    sysbus_mmio_map(SYS_BUS_DEVICE(gpio1), 0, 0xE0028010);
 
-        if (!done_smc && (!nd->model || strcmp(nd->model, "smc91c111") == 0)) {
-            smc91c111_init(nd, 0x10010000, sic[25]);
-            done_smc = 1;
-        } else {
-            pci_nic_init_nofail(nd, pci_bus, "rtl8139", NULL);
-        }
-    }
-    if (usb_enabled(false)) {
-        pci_create_simple(pci_bus, -1, "pci-ohci");
-    }
-    n = drive_get_max_bus(IF_SCSI);
-    while (n >= 0) {
-        pci_create_simple(pci_bus, -1, "lsi53c895a");
-        n--;
-    }
-    */ 
+    memory_region_init_ram(iap, NULL, "vivotech.iap", 0x2000,
+                          &error_abort);
+    vmstate_register_ram_global(iap);
+    //vmstate_register_ram(iap
+    //memory_region_add_subregion(sysmem, 0x7FFFFFF0, iap);
+    memory_region_add_subregion(sysmem, 0x7FFFF000, iap);
+    
+    //copy data into the memory address 
+    char *ramptr = (char *)memory_region_get_ram_ptr(iap);
+    if(ramptr != NULL) 
+        memcpy(ramptr+0xFF0, iapcode, sizeof(iapcode));
+    
+    //initialize timer   
+    sysbus_create_simple("lpc213x-timer",  0xE0004000, pic[4]);
+  
+    
+    
+    //uart stuff 
     //sysbus_create_simple("pl011", 0x101f1000, pic[12]);
     //sysbus_create_simple("pl011", 0x101f2000, pic[13]);
     //sysbus_create_simple("pl011", 0x101f3000, pic[14]);
     //sysbus_create_simple("pl011", 0x10009000, sic[6]);
-
+    //DMA controller
     //sysbus_create_simple("pl080", 0x10130000, pic[17]);
+    //timer module 
     //sysbus_create_simple("sp804", 0x101e2000, pic[4]);
     //sysbus_create_simple("sp804", 0x101e3000, pic[5]);
-
+    //gpio
     //sysbus_create_simple("pl061", 0x101e4000, pic[6]);
     //sysbus_create_simple("pl061", 0x101e5000, pic[7]);
     //sysbus_create_simple("pl061", 0x101e6000, pic[8]);
@@ -385,7 +235,8 @@ static void vivotech_init(MachineState *machine, int board_id)
                           4, 0x0089, 0x0018, 0x0000, 0x0, 0)) {
         fprintf(stderr, "qemu: Error registering flash memory.\n");
     }
-
+    
+     
     vivotech_binfo.ram_size = machine->ram_size;
     vivotech_binfo.kernel_filename = machine->kernel_filename;
     vivotech_binfo.kernel_cmdline = machine->kernel_cmdline;
@@ -411,14 +262,6 @@ static QEMUMachine vivotech_machine = {
     .block_default_type = IF_SCSI,
 };
 
-/*
-static QEMUMachine vivotechab_machine = {
-    .name = "vivotechab",
-    .desc = "ARM vivotech/AB (ARM926EJ-S)",
-    .init = vab_init,
-    .block_default_type = IF_SCSI,
-};
-*/
 static void vivotech_machine_init(void)
 {
     qemu_register_machine(&vivotech_machine);
@@ -427,25 +270,25 @@ static void vivotech_machine_init(void)
 
 machine_init(vivotech_machine_init);
 
-static void vpb_sic_class_init(ObjectClass *klass, void *data)
-{
-    DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+//static void vpb_sic_class_init(ObjectClass *klass, void *data)
+//{
+//    DeviceClass *dc = DEVICE_CLASS(klass);
+//    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+//
+//    k->init = vpb_sic_init;
+//    dc->vmsd = &vmstate_vpb_sic;
+//}
 
-    k->init = vpb_sic_init;
-    dc->vmsd = &vmstate_vpb_sic;
-}
-
-static const TypeInfo vpb_sic_info = {
-    .name          = TYPE_VIVOTECH_PB_SIC,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(vpb_sic_state),
-    .class_init    = vpb_sic_class_init,
-};
+//static const TypeInfo vpb_sic_info = {
+//    .name          = TYPE_VIVOTECH_PB_SIC,
+//    .parent        = TYPE_SYS_BUS_DEVICE,
+//    .instance_size = sizeof(vpb_sic_state),
+//    .class_init    = vpb_sic_class_init,
+//};
 
 static void vivotechpb_register_types(void)
 {
-    type_register_static(&vpb_sic_info);
+    //type_register_static(&vpb_sic_info);
 }
 
 type_init(vivotechpb_register_types)

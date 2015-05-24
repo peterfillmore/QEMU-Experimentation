@@ -50,11 +50,11 @@ typedef struct PL031State {
     uint32_t tick_offset_vmstate;
     uint32_t tick_offset;
 
-    uint32_t mr;
-    uint32_t lr;
-    uint32_t cr;
-    uint32_t im;
-    uint32_t is;
+    uint32_t mr; //match reg
+    uint32_t lr; //load reg
+    uint32_t cr; //control reg
+    uint32_t im; //interrupt mask?
+    uint32_t is; //interrupt status
 } PL031State;
 
 static const unsigned char pl031_id[] = {

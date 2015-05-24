@@ -17,7 +17,7 @@ common-obj-$(CONFIG_IMX) += imx_epit.o
 common-obj-$(CONFIG_IMX) += imx_gpt.o
 common-obj-$(CONFIG_LM32) += lm32_timer.o
 common-obj-$(CONFIG_MILKYMIST) += milkymist-sysctl.o
-
+common-obj-$(CONFIG_LPC213X) += lpc213x_arm_timer.o 
 obj-$(CONFIG_EXYNOS4) += exynos4210_mct.o
 obj-$(CONFIG_EXYNOS4) += exynos4210_pwm.o
 obj-$(CONFIG_EXYNOS4) += exynos4210_rtc.o
@@ -31,3 +31,5 @@ obj-$(CONFIG_DIGIC) += digic-timer.o
 obj-$(CONFIG_MC146818RTC) += mc146818rtc.o
 
 obj-$(CONFIG_ALLWINNER_A10_PIT) += allwinner-a10-pit.o
+
+
